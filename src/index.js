@@ -12,7 +12,7 @@ app.use(bodyParser.json())
 
 app.post('/render', async (req, res) => {
   res.setHeader('Content-type', 'application/pdf')
-  res.send(await renderPDF(req.body.html))
+  res.send(await renderPDF(req.body.html, req.body.scale_param, req.body.width_param, req.body.height_param))
 })
 
 app.listen(8082, () => {
@@ -23,7 +23,7 @@ process.on('SIGINT', function () {
   process.exit()
 })
 
-async function renderPDF(html) {
+async function renderPDF(html, scale_param, width_param, height_param) {
   const browser = await puppeteer.launch({
     headless: true,
     executablePath: 'google-chrome-stable',
@@ -35,7 +35,6 @@ async function renderPDF(html) {
   await page.setContent(html, {waitUntil: 'networkidle0'})
   const pdf = await page.pdf({
     printBackground: true,
-    format: 'A4',
     preferCSSPageSize: true,
     margin: {
       top: 0,
@@ -43,6 +42,9 @@ async function renderPDF(html) {
       right: 0,
       bottom: 0,
     },
+    height: height_param,
+    width: width_param,
+    scale: scale_param
   })
 
   await browser.close()
