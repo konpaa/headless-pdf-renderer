@@ -5,6 +5,8 @@ import express from 'express'
 import cors from 'cors'
 import bodyParser from 'body-parser'
 
+const PAGE_TIMEOUT_MS = parseInt(process.env.PAGE_TIMEOUT_MS || '60000', 10)
+
 const app = express()
 
 app.use(cors())
@@ -17,6 +19,7 @@ app.post('/render', async (req, res) => {
 
 app.listen(8082, () => {
   console.log('Listening on port 8082')
+  console.log(`Page timeout: ${PAGE_TIMEOUT_MS}ms`)
 })
 
 process.on('SIGINT', function () {
@@ -32,7 +35,8 @@ async function renderPDF(html, scale_param, width_param, height_param) {
     ]
   })
   const page = await browser.newPage()
-  await page.setContent(html, {waitUntil: 'networkidle0'})
+  page.setDefaultTimeout(PAGE_TIMEOUT_MS)
+  await page.setContent(html, { waitUntil: 'load' })
   const pdf = await page.pdf({
     printBackground: true,
     preferCSSPageSize: true,
