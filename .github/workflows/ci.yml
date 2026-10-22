@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*.*.*' ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    strategy:
+      matrix:
+        node-version: [22.x, 24.x]
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'yarn'
+    
+    - name: Install dependencies
+      run: yarn install --frozen-lockfile
+    
+    - name: Check for vulnerabilities
+      run: yarn audit --level moderate || true
+    
+    - name: Install Chrome dependencies
+      run: |
+        sudo apt-get update
+        # Try libasound2t64 first (Ubuntu 24.04+), fallback to libasound2 (older)
+        LIBASOUND=$(apt-cache search --names-only '^libasound2' | grep -q libasound2t64 && echo libasound2t64 || echo libasound2)
+        sudo apt-get install -y \
+          fonts-liberation \
+          $LIBASOUND \
+          libatk-bridge2.0-0 \
+          libatk1.0-0 \
+          libcups2 \
+          libdbus-1-3 \
+          libdrm2 \
+          libgbm1 \
+          libgtk-3-0 \
+          libnspr4 \
+          libnss3 \
+          libxcomposite1 \
+          libxdamage1 \
+          libxrandr2 \
+          xdg-utils
+    
+    - name: Run tests
+      run: yarn test
+
+  docker-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: test
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Docker meta
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: konpaa/headless-pdf-renderer
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=semver,pattern={{major}}
+          type=sha,prefix=,format=short
+          type=raw,value=latest,enable={{is_default_branch}}
+    
+    - name: Build Docker image (PR)
+      if: github.event_name == 'pull_request'
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: false
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Login to Docker Hub
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    
+    - name: Build and push Docker image
+      if: github.event_name != 'pull_request'
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
