@@ -92,6 +92,53 @@ docker build -t headless-pdf-renderer .
 docker run -p 8082:8082 headless-pdf-renderer
 ```
 
+### Pre-built Images
+
+Pre-built multi-architecture Docker images are available on Docker Hub:
+
+```bash
+docker pull konpaa/headless-pdf-renderer:latest
+docker run -p 8082:8082 konpaa/headless-pdf-renderer:latest
+```
+
+Supported architectures: `linux/amd64`, `linux/arm64`
+
+Available tags:
+- `latest` - latest build from main branch
+- `v1.0.0` - semantic version tags
+- `abc1234` - short commit SHA tags
+
+### CI/CD and Docker Hub Publishing
+
+The project uses GitHub Actions to automatically build and publish Docker images to Docker Hub.
+
+**Required GitHub Repository Secrets:**
+
+To enable Docker Hub publishing, add the following secrets to your GitHub repository (Settings → Secrets and variables → Actions → New repository secret):
+
+1. **DOCKERHUB_USERNAME**: Your Docker Hub username
+2. **DOCKERHUB_TOKEN**: Docker Hub access token (see below how to create)
+
+**How to create a Docker Hub access token:**
+
+1. Log in to [Docker Hub](https://hub.docker.com/)
+2. Click on your username in the top right → **Account Settings**
+3. Go to **Security** tab
+4. Click **New Access Token**
+5. Enter a description (e.g., "GitHub Actions")
+6. Select permissions: **Read, Write, Delete** (or **Read & Write** minimum)
+7. Click **Generate**
+8. Copy the token immediately (it won't be shown again)
+9. Add it to GitHub repository secrets as `DOCKERHUB_TOKEN`
+
+**CI/CD Workflow:**
+
+- **Pull Requests**: Build multi-arch images (test only, no push)
+- **Push to main**: Build, test, and push images with `latest` tag and commit SHA
+- **Version tags** (e.g., `v1.0.0`): Build, test, and push with semantic version tags
+
+All images are built for both `linux/amd64` and `linux/arm64` platforms.
+
 ## Security Considerations
 
 ### SSRF Protection (Enabled by Default)
