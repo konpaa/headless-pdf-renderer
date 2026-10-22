@@ -8,9 +8,33 @@ const QUEUE_LIMIT = parseInt(process.env.QUEUE_LIMIT || '50', 10)
 const BROWSER_MAX_RENDERS = parseInt(process.env.BROWSER_MAX_RENDERS || '200', 10)
 const EXECUTABLE_PATH = process.env.PUPPETEER_EXECUTABLE_PATH
 const BODY_SIZE_LIMIT = process.env.BODY_SIZE_LIMIT || '10mb'
+const DISABLE_SSRF_PROTECTION = process.env.DISABLE_SSRF_PROTECTION === 'true'
+
+// Validate configuration
+if (PAGE_TIMEOUT_MS < 1000 || PAGE_TIMEOUT_MS > 300000) {
+  throw new Error('PAGE_TIMEOUT_MS must be between 1000 and 300000')
+}
+if (CONCURRENCY_LIMIT < 1 || CONCURRENCY_LIMIT > 100) {
+  throw new Error('CONCURRENCY_LIMIT must be between 1 and 100')
+}
+if (QUEUE_LIMIT < 1 || QUEUE_LIMIT > 1000) {
+  throw new Error('QUEUE_LIMIT must be between 1 and 1000')
+}
 
 // Puppeteer accepts a page size in px, in, cm or mm (px when no unit is given)
 const PAGE_SIZE_PATTERN = /^\d*\.?\d+(px|in|cm|mm)?$/i
+
+// Private IP ranges for SSRF protection
+const PRIVATE_IP_RANGES = [
+  /^127\./,           // 127.0.0.0/8 (loopback)
+  /^10\./,            // 10.0.0.0/8 (private)
+  /^172\.(1[6-9]|2\d|3[01])\./,  // 172.16.0.0/12 (private)
+  /^192\.168\./,      // 192.168.0.0/16 (private)
+  /^169\.254\./,      // 169.254.0.0/16 (link-local)
+  /^::1$/,            // IPv6 loopback
+  /^fe80:/,           // IPv6 link-local
+  /^fc00:/,           // IPv6 unique local
+]
 
 // Renders run at most CONCURRENCY_LIMIT at a time, the rest wait in a bounded queue
 let activeRenders = 0
@@ -26,6 +50,18 @@ const app = express()
 
 app.use(cors())
 app.use(express.json({ limit: BODY_SIZE_LIMIT }))
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  const status = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    activeRenders,
+    queueLength: queue.length,
+    browserActive: currentBrowser !== null && !currentBrowser.retired,
+  }
+  res.json(status)
+})
 
 app.post('/render', async (req, res) => {
   try {
@@ -48,14 +84,17 @@ app.post('/render', async (req, res) => {
   }
 })
 
-// Malformed JSON, too large body and other body-parser errors
+// Malformed JSON, too large body and other express.json() errors
 app.use((err, req, res, next) => {
-  res.status(err.status || 500).json({ error: err.message })
+  if (!res.headersSent) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
 })
 
 const server = app.listen(8082, () => {
   console.log('Listening on port 8082')
   console.log(`Concurrency limit: ${CONCURRENCY_LIMIT}, queue limit: ${QUEUE_LIMIT}, page timeout: ${PAGE_TIMEOUT_MS}ms, browser recycled every ${BROWSER_MAX_RENDERS} renders`)
+  console.log(`SSRF protection: ${DISABLE_SSRF_PROTECTION ? 'DISABLED' : 'ENABLED'}`)
   // Launch the browser up front so the first request doesn't wait for it
   currentBrowser = launchBrowser()
 })
@@ -185,13 +224,50 @@ function closeBrowser(entry) {
 async function renderPDF({ html, scale, width, height }) {
   const entry = acquireBrowser()
   let context = null
+  let page = null
   try {
     const browser = await entry.browser
     context = await browser.createBrowserContext()
-    const page = await context.newPage()
+    page = await context.newPage()
     page.setDefaultTimeout(PAGE_TIMEOUT_MS)
+    
+    // SSRF protection: intercept requests and block private IPs and file:// URLs
+    if (!DISABLE_SSRF_PROTECTION) {
+      await page.setRequestInterception(true)
+      page.on('request', (request) => {
+        const url = request.url()
+        
+        // Block file:// URLs
+        if (url.startsWith('file://')) {
+          request.abort('blockedbyclient')
+          return
+        }
+        
+        // Block data URLs over 1MB to prevent DoS
+        if (url.startsWith('data:') && url.length > 1024 * 1024) {
+          request.abort('blockedbyclient')
+          return
+        }
+        
+        // Check for private IP addresses
+        try {
+          const urlObj = new URL(url)
+          const hostname = urlObj.hostname
+          
+          // Check if hostname is a private IP
+          if (PRIVATE_IP_RANGES.some(pattern => pattern.test(hostname))) {
+            request.abort('blockedbyclient')
+            return
+          }
+        } catch (e) {
+          // Invalid URL, let Puppeteer handle it
+        }
+        
+        request.continue()
+      })
+    }
+    
     await page.setContent(html, { waitUntil: 'load' })
-    // page.pdf() has no timeout of its own in Puppeteer 5
     return await withTimeout(page.pdf({
       printBackground: true,
       preferCSSPageSize: true,
@@ -206,6 +282,9 @@ async function renderPDF({ html, scale, width, height }) {
       scale,
     }), PAGE_TIMEOUT_MS)
   } finally {
+    if (page) {
+      await page.close().catch(err => console.error('Page close failed:', err.message))
+    }
     if (context) {
       await withTimeout(context.close(), PAGE_TIMEOUT_MS).catch(err => {
         // A browser that can't close a context is in a bad state

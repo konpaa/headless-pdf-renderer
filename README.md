@@ -5,7 +5,7 @@ HTML to PDF using Google Chrome with Puppeteer.
 
 ## Requirements
 
-- Node.js 20+ (recommended: Node.js 22)
+- Node.js 22.12+ (recommended: Node.js 24)
 - Google Chrome or Chromium
 
 ## Installation
@@ -45,8 +45,9 @@ shutting down, 504 when the page doesn't load within `PAGE_TIMEOUT_MS`, 500 othe
 | `QUEUE_LIMIT`               | `50`                    | Requests waiting for a free slot before 503 is returned       |
 | `PAGE_TIMEOUT_MS`           | `60000`                 | Timeout for loading the HTML and for printing the PDF         |
 | `BROWSER_MAX_RENDERS`       | `200`                   | The browser is restarted after this many renders              |
-| `PUPPETEER_EXECUTABLE_PATH` | `google-chrome-stable`  | Browser binary                                                |
+| `PUPPETEER_EXECUTABLE_PATH` | (auto)                  | Browser binary (optional, uses bundled Chrome by default)     |
 | `BODY_SIZE_LIMIT`           | `10mb`                  | Maximum size for request body (supports values like '10mb', '1gb') |
+| `DISABLE_SSRF_PROTECTION`   | `false`                 | Set to `true` to disable SSRF protection (not recommended)    |
 
 One browser is shared by all requests, each render gets its own browser context.
 Plan for roughly 250–400 MB for the browser plus 50–90 MB per concurrent render.
@@ -54,6 +55,25 @@ Plan for roughly 250–400 MB for the browser plus 50–90 MB per concurrent ren
 On SIGINT/SIGTERM the server stops accepting requests and waits for the running
 renders, so give the container a stop timeout of at least `PAGE_TIMEOUT_MS`
 (`docker stop -t`, `stop_grace_period` in Compose).
+
+## API Endpoints
+
+### `POST /render`
+
+Render HTML to PDF. See the Request section above for parameters.
+
+### `GET /health`
+
+Health check endpoint that returns:
+```json
+{
+  "status": "ok",
+  "timestamp": "2024-01-01T00:00:00.000Z",
+  "activeRenders": 0,
+  "queueLength": 0,
+  "browserActive": true
+}
+```
 
 ## Testing
 
@@ -74,12 +94,26 @@ docker run -p 8082:8082 headless-pdf-renderer
 
 ## Security Considerations
 
-**SSRF Warning**: This service renders arbitrary HTML, which may include external resources.
+### SSRF Protection (Enabled by Default)
+
+This service implements SSRF (Server-Side Request Forgery) protection by default:
+- Blocks `file://` URLs to prevent local file access
+- Blocks requests to private IP ranges (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16)
+- Blocks IPv6 loopback and link-local addresses
+- Limits data URLs to 1MB to prevent DoS attacks
+
+**To disable SSRF protection** (not recommended in production), set `DISABLE_SSRF_PROTECTION=true`.
+
+External resources (CDNs, public images, fonts) are allowed by default.
+
+### Additional Security Recommendations
+
 In production environments, consider:
 - Running in an isolated network segment
 - Using firewall rules to restrict outbound connections
-- Implementing request filtering/validation at the application level
+- Implementing rate limiting at the reverse proxy level
 - Not exposing this service directly to untrusted users
+- Regular security updates of base images and dependencies
 
 ## Development
 

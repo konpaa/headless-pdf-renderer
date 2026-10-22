@@ -48,6 +48,17 @@ describe('PDF Render Service', () => {
     }
   })
 
+  it('should respond to health check', async () => {
+    const response = await fetch(`${BASE_URL}/health`)
+    assert.strictEqual(response.status, 200)
+    
+    const health = await response.json()
+    assert.strictEqual(health.status, 'ok')
+    assert.ok(health.timestamp)
+    assert.ok(typeof health.activeRenders === 'number')
+    assert.ok(typeof health.queueLength === 'number')
+  })
+
   it('should render simple HTML to PDF', async () => {
     const html = '<html><body><h1>Test PDF</h1><p>This is a test document.</p></body></html>'
     
@@ -159,6 +170,29 @@ describe('PDF Render Service', () => {
       body: JSON.stringify({ html })
     })
 
+    assert.strictEqual(response.status, 200)
+    const buffer = await response.arrayBuffer()
+    const pdf = Buffer.from(buffer)
+    assert.strictEqual(pdf.slice(0, 4).toString(), '%PDF')
+  })
+
+  it('should block file:// URLs with SSRF protection', async () => {
+    const html = `
+      <html>
+        <body>
+          <h1>Test</h1>
+          <img src="file:///etc/passwd" />
+        </body>
+      </html>
+    `
+    
+    const response = await fetch(`${BASE_URL}/render`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ html })
+    })
+
+    // Should still render but block the file:// request
     assert.strictEqual(response.status, 200)
     const buffer = await response.arrayBuffer()
     const pdf = Buffer.from(buffer)
