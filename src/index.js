@@ -174,6 +174,8 @@ function launchBrowser() {
     headless: true,
     args: [
       '--disable-dev-shm-usage',
+      // Ubuntu 24.04+ CI environments may need --no-sandbox
+      ...(process.env.CI ? ['--no-sandbox', '--disable-setuid-sandbox'] : []),
     ],
     // Signals are handled by shutdown(), so in-flight renders can finish
     handleSIGINT: false,
