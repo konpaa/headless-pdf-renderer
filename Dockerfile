@@ -1,18 +1,6 @@
-FROM node:24-bookworm-slim AS build
-
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-
-WORKDIR /app
-COPY package.json yarn.lock /app/
-RUN yarn install --frozen-lockfile
-COPY babel.config.js /app/
-COPY src /app/src
-RUN yarn run build
-
-
 FROM node:24-bookworm-slim AS deps
 
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 
 WORKDIR /app
 COPY package.json yarn.lock /app/
@@ -22,10 +10,9 @@ RUN yarn install --frozen-lockfile --production
 FROM node:24-bookworm-slim
 
 ARG TARGETARCH
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 
 # Google Chrome has no Linux arm64 build, so arm64 uses Debian's Chromium.
-# Puppeteer 5 on arm64 always launches /usr/bin/chromium-browser and ignores executablePath.
 RUN FONTS="fonts-ipafont-gothic fonts-wqy-zenhei fonts-thai-tlwg fonts-kacst fonts-freefont-ttf" \
     && apt-get update \
     && if [ "$TARGETARCH" = "arm64" ]; then \
@@ -47,7 +34,7 @@ RUN FONTS="fonts-ipafont-gothic fonts-wqy-zenhei fonts-thai-tlwg fonts-kacst fon
 WORKDIR /app
 VOLUME /app/storage
 COPY --from=deps --chown=pptruser:pptruser /app/node_modules/ /app/node_modules/
-COPY --from=build --chown=pptruser:pptruser /app/dist/ /app/
+COPY --chown=pptruser:pptruser src/ /app/src/
 
 STOPSIGNAL SIGINT
 
@@ -55,4 +42,4 @@ USER pptruser
 
 # tini reaps zombie Chrome processes and forwards signals to node
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["node", "index.js"]
+CMD ["node", "src/index.js"]

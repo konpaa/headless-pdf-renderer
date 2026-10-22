@@ -3,6 +3,16 @@
 This is a simple HTTP server that offers an endpoint to render
 HTML to PDF using Google Chrome with Puppeteer.
 
+## Requirements
+
+- Node.js 20+ (recommended: Node.js 22)
+- Google Chrome or Chromium
+
+## Installation
+
+```bash
+yarn install
+```
 
 ### Usage
 
@@ -35,13 +45,48 @@ shutting down, 504 when the page doesn't load within `PAGE_TIMEOUT_MS`, 500 othe
 | `QUEUE_LIMIT`               | `50`                    | Requests waiting for a free slot before 503 is returned       |
 | `PAGE_TIMEOUT_MS`           | `60000`                 | Timeout for loading the HTML and for printing the PDF         |
 | `BROWSER_MAX_RENDERS`       | `200`                   | The browser is restarted after this many renders              |
-| `PUPPETEER_EXECUTABLE_PATH` | `google-chrome-stable`  | Browser binary (ignored by Puppeteer 5 on arm64)              |
+| `PUPPETEER_EXECUTABLE_PATH` | `google-chrome-stable`  | Browser binary                                                |
+| `BODY_SIZE_LIMIT`           | `10mb`                  | Maximum size for request body (supports values like '10mb', '1gb') |
 
-One browser is shared by all requests, each render gets its own incognito context.
+One browser is shared by all requests, each render gets its own browser context.
 Plan for roughly 250–400 MB for the browser plus 50–90 MB per concurrent render.
 
 On SIGINT/SIGTERM the server stops accepting requests and waits for the running
 renders, so give the container a stop timeout of at least `PAGE_TIMEOUT_MS`
 (`docker stop -t`, `stop_grace_period` in Compose).
+
+## Testing
+
+Run the test suite:
+
+```bash
+yarn test
+```
+
+## Docker
+
+Build and run the Docker image:
+
+```bash
+docker build -t headless-pdf-renderer .
+docker run -p 8082:8082 headless-pdf-renderer
+```
+
+## Security Considerations
+
+**SSRF Warning**: This service renders arbitrary HTML, which may include external resources.
+In production environments, consider:
+- Running in an isolated network segment
+- Using firewall rules to restrict outbound connections
+- Implementing request filtering/validation at the application level
+- Not exposing this service directly to untrusted users
+
+## Development
+
+Start the development server:
+
+```bash
+yarn dev
+```
 
 See my blog post for more usage information: https://blog.timo.page/rendering-html-to-pdf-in-laravel-and-docker

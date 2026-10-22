@@ -1,15 +1,13 @@
-import 'core-js'
-import 'regenerator-runtime'
 import puppeteer from 'puppeteer'
 import express from 'express'
 import cors from 'cors'
-import bodyParser from 'body-parser'
 
 const PAGE_TIMEOUT_MS = parseInt(process.env.PAGE_TIMEOUT_MS || '60000', 10)
 const CONCURRENCY_LIMIT = parseInt(process.env.CONCURRENCY_LIMIT || '4', 10)
 const QUEUE_LIMIT = parseInt(process.env.QUEUE_LIMIT || '50', 10)
 const BROWSER_MAX_RENDERS = parseInt(process.env.BROWSER_MAX_RENDERS || '200', 10)
-const EXECUTABLE_PATH = process.env.PUPPETEER_EXECUTABLE_PATH || 'google-chrome-stable'
+const EXECUTABLE_PATH = process.env.PUPPETEER_EXECUTABLE_PATH
+const BODY_SIZE_LIMIT = process.env.BODY_SIZE_LIMIT || '10mb'
 
 // Puppeteer accepts a page size in px, in, cm or mm (px when no unit is given)
 const PAGE_SIZE_PATTERN = /^\d*\.?\d+(px|in|cm|mm)?$/i
@@ -27,7 +25,7 @@ let shuttingDown = false
 const app = express()
 
 app.use(cors())
-app.use(bodyParser.json())
+app.use(express.json({ limit: BODY_SIZE_LIMIT }))
 
 app.post('/render', async (req, res) => {
   try {
@@ -40,7 +38,7 @@ app.post('/render', async (req, res) => {
       return renderPDF(options)
     })
     res.setHeader('Content-type', 'application/pdf')
-    res.send(pdf)
+    res.end(Buffer.from(pdf))
   } catch (err) {
     const status = err.status || (err.name === 'TimeoutError' ? 504 : 500)
     console.error(`Render failed (${status}): ${err.message}`)
@@ -133,9 +131,8 @@ function releaseBrowser(entry) {
 function launchBrowser() {
   // Concurrent renders share this launch instead of starting their own browsers
   const entry = { active: 0, renders: 0, retired: false }
-  entry.browser = puppeteer.launch({
+  const launchOptions = {
     headless: true,
-    executablePath: EXECUTABLE_PATH,
     args: [
       '--disable-dev-shm-usage',
     ],
@@ -143,7 +140,14 @@ function launchBrowser() {
     handleSIGINT: false,
     handleSIGTERM: false,
     handleSIGHUP: false,
-  })
+  }
+  
+  // Only set executablePath if explicitly provided
+  if (EXECUTABLE_PATH) {
+    launchOptions.executablePath = EXECUTABLE_PATH
+  }
+  
+  entry.browser = puppeteer.launch(launchOptions)
   entry.browser.then(browser => {
     console.log('Browser launched')
     browser.on('disconnected', () => {
@@ -183,7 +187,7 @@ async function renderPDF({ html, scale, width, height }) {
   let context = null
   try {
     const browser = await entry.browser
-    context = await browser.createIncognitoBrowserContext()
+    context = await browser.createBrowserContext()
     const page = await context.newPage()
     page.setDefaultTimeout(PAGE_TIMEOUT_MS)
     await page.setContent(html, { waitUntil: 'load' })
