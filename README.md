@@ -52,9 +52,9 @@ curl -X POST http://localhost:8082/render \
 
 ### `GET /health`
 
-Health check endpoint.
+Health check endpoint. Returns **200** only when Chrome is ready; otherwise **503** (`status: "unhealthy"`) — including launch failure and shutdown. Docker `HEALTHCHECK` relies on this.
 
-**Response** (JSON):
+**Response** (JSON, healthy):
 
 ```json
 {

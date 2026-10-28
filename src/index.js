@@ -51,16 +51,20 @@ const app = express()
 app.use(cors())
 app.use(express.json({ limit: BODY_SIZE_LIMIT }))
 
-// Health check endpoint
+// Health check: 503 until Chrome is up (and while shutting down / after launch failure)
 app.get('/health', (req, res) => {
-  const status = {
-    status: 'ok',
+  const browserActive = currentBrowser !== null
+    && !currentBrowser.retired
+    && currentBrowser.ready === true
+  const ok = !shuttingDown && browserActive
+  const body = {
+    status: ok ? 'ok' : 'unhealthy',
     timestamp: new Date().toISOString(),
     activeRenders,
     queueLength: queue.length,
-    browserActive: currentBrowser !== null && !currentBrowser.retired,
+    browserActive,
   }
-  res.json(status)
+  res.status(ok ? 200 : 503).json(body)
 })
 
 app.post('/render', async (req, res) => {
@@ -169,7 +173,7 @@ function releaseBrowser(entry) {
 
 function launchBrowser() {
   // Concurrent renders share this launch instead of starting their own browsers
-  const entry = { active: 0, renders: 0, retired: false }
+  const entry = { active: 0, renders: 0, retired: false, ready: false }
   const launchOptions = {
     headless: true,
     args: [
@@ -182,14 +186,15 @@ function launchBrowser() {
     handleSIGTERM: false,
     handleSIGHUP: false,
   }
-  
+
   // Only set executablePath if explicitly provided
   if (EXECUTABLE_PATH) {
     launchOptions.executablePath = EXECUTABLE_PATH
   }
-  
+
   entry.browser = puppeteer.launch(launchOptions)
   entry.browser.then(browser => {
+    entry.ready = true
     console.log('Browser launched')
     browser.on('disconnected', () => {
       if (currentBrowser === entry) {
@@ -198,6 +203,7 @@ function launchBrowser() {
       }
     })
   }, err => {
+    entry.ready = false
     console.error('Browser launch failed:', err.message)
     if (currentBrowser === entry) {
       currentBrowser = null

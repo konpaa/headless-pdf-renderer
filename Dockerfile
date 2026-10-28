@@ -17,7 +17,9 @@ ENV PUPPETEER_SKIP_DOWNLOAD=true \
     NODE_ENV=production
 
 # Google Chrome has no Linux arm64 build, so arm64 uses Debian's Chromium.
-RUN FONTS="fonts-ipafont-gothic fonts-wqy-zenhei fonts-thai-tlwg fonts-kacst fonts-freefont-ttf" \
+# fonts-liberation: Liberation Sans/Serif/Mono so arm64 Chromium does not
+# fall back to a mismatched CJK/other font for common Latin faces.
+RUN FONTS="fonts-liberation fonts-ipafont-gothic fonts-wqy-zenhei fonts-thai-tlwg fonts-kacst fonts-freefont-ttf" \
     && apt-get update \
     && if [ "$TARGETARCH" = "arm64" ]; then \
       apt-get install -y chromium tini curl $FONTS --no-install-recommends \

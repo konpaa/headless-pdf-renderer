@@ -20,12 +20,14 @@ describe('PDF Render Service', () => {
       stdio: 'pipe'
     })
 
-    // Wait for server to start
+    // /health is ok only after Chrome launches
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('Server start timeout')), 30000)
-      
+      let ready = false
+
       serverProcess.stdout.on('data', (data) => {
-        if (data.toString().includes('Listening on port')) {
+        if (data.toString().includes('Browser launched') && !ready) {
+          ready = true
           clearTimeout(timeout)
           resolve()
         }
@@ -39,6 +41,13 @@ describe('PDF Render Service', () => {
         clearTimeout(timeout)
         reject(err)
       })
+
+      serverProcess.on('exit', (code) => {
+        if (!ready) {
+          clearTimeout(timeout)
+          reject(new Error(`Server exited before ready (code ${code})`))
+        }
+      })
     })
   })
 
@@ -48,12 +57,13 @@ describe('PDF Render Service', () => {
     }
   })
 
-  it('should respond to health check', async () => {
+  it('should respond to health check when browser is ready', async () => {
     const response = await fetch(`${BASE_URL}/health`)
     assert.strictEqual(response.status, 200)
-    
+
     const health = await response.json()
     assert.strictEqual(health.status, 'ok')
+    assert.strictEqual(health.browserActive, true)
     assert.ok(health.timestamp)
     assert.ok(typeof health.activeRenders === 'number')
     assert.ok(typeof health.queueLength === 'number')
