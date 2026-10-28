@@ -10,7 +10,10 @@ RUN yarn install --frozen-lockfile --production
 FROM node:24-bookworm-slim
 
 ARG TARGETARCH
+# System Chrome/Chromium (arm64 is symlinked to google-chrome-stable).
+# Without this, Puppeteer looks for a bundled browser that was never downloaded.
 ENV PUPPETEER_SKIP_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable \
     NODE_ENV=production
 
 # Google Chrome has no Linux arm64 build, so arm64 uses Debian's Chromium.

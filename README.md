@@ -83,7 +83,7 @@ Configure the service with environment variables:
 | `PAGE_TIMEOUT_MS`           | `60000`  | Timeout (ms) for loading HTML and generating PDF              |
 | `BROWSER_MAX_RENDERS`       | `200`    | Browser is restarted after this many renders                  |
 | `BODY_SIZE_LIMIT`           | `10mb`   | Max request body size (e.g., `10mb`, `50mb`)                  |
-| `PUPPETEER_EXECUTABLE_PATH` | (auto)   | Custom browser binary path (uses bundled Chrome by default)   |
+| `PUPPETEER_EXECUTABLE_PATH` | (Docker: `/usr/bin/google-chrome-stable`) | Browser binary; required in the image because Chrome is not bundled |
 | `DISABLE_SSRF_PROTECTION`   | `false`  | Set to `true` to disable SSRF protection (not recommended)    |
 
 **Resource planning:** One shared browser uses ~250–400 MB, plus ~50–90 MB per concurrent render.
